@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.Strikers" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/turf_ink</item>
+        <item name="android:statusBarColor">@color/turf_ink</item>
+        <item name="android:navigationBarColor">@color/turf_ink</item>
+    </style>
+</resources>
