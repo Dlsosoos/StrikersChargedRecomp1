@@ -22,8 +22,7 @@ private data class Tab(val label: String, val icon: String)
 
 private val TABS = listOf(
     Tab("Jogar", "⚽"),
-    Tab("Config", "⚙️"),
-    Tab("Cheats", "⚡")
+    Tab("Config", "⚙️")
 )
 
 @Composable
@@ -55,8 +54,7 @@ fun StrikersApp(store: Store) {
             Box(Modifier.padding(padding).fillMaxSize()) {
                 when (tab) {
                     0 -> PlayScreen(store)
-                    1 -> ConfigScreen(store)
-                    else -> ToggleScreen("Cheats", "Ainda sem efeito: o motor nativo precisa ser integrado.", CHEATS, store, "cheat_")
+                    else -> ConfigScreen(store)
                 }
             }
         }
