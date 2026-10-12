@@ -20,15 +20,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -36,14 +31,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -53,19 +46,9 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.pedro.strikersrecomp.NativeBridge
+import com.pedro.strikersrecomp.DolphinLauncher
 import com.pedro.strikersrecomp.R
 import com.pedro.strikersrecomp.Store
-
-// Os cheats ficam na ordem: o índice vira um bit na máscara enviada ao motor nativo.
-val CHEATS = listOf(
-    "megastrike_full" to "Megastrike sempre carregado",
-    "unlimited_items" to "Itens ilimitados",
-    "freeze_clock" to "Cronômetro congelado",
-    "double_goals" to "Gols valem em dobro"
-)
-
-private const val NOT_READY = "Ainda sem efeito: o motor nativo precisa ser integrado (veja docs/PORTING.md)."
 
 private fun displayName(ctx: Context, uri: Uri): String {
     ctx.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
@@ -129,6 +112,7 @@ fun PlayScreen(store: Store) {
     val ctx = LocalContext.current
     var isoUri by remember { mutableStateOf(store.isoUri) }
     var status by remember { mutableStateOf<String?>(null) }
+    var needInstall by remember { mutableStateOf(false) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null && !isSupportedGame(displayName(ctx, uri))) {
@@ -200,22 +184,20 @@ fun PlayScreen(store: Store) {
             Button(
                 enabled = isoUri != null,
                 onClick = {
-                    val uri = Uri.parse(isoUri)
-                    val pfd = try {
-                        ctx.contentResolver.openFileDescriptor(uri, "r")
-                    } catch (e: Exception) {
-                        null
-                    }
-                    if (pfd == null) {
-                        status = "Não consegui abrir o arquivo. Escolha o ISO de novo."
-                    } else if (!NativeBridge.available) {
-                        pfd.close()
-                        status = "Este build não inclui o motor nativo ainda. Veja docs/PORTING.md."
-                    } else {
-                        var mask = 0L
-                        CHEATS.forEachIndexed { i, c -> if (store.flag("cheat_" + c.first)) mask = mask or (1L shl i) }
-                        val ok = NativeBridge.start(pfd.detachFd(), mask, store.number("res_scale", 1f))
-                        if (!ok) status = "O motor nativo ainda não está integrado."
+                    val result = DolphinLauncher.launch(ctx, Uri.parse(isoUri), store.flag("send_path"))
+                    when (result) {
+                        null -> {
+                            status = null
+                            needInstall = false
+                        }
+                        DolphinLauncher.NOT_INSTALLED -> {
+                            status = "O Dolphin não está instalado neste celular."
+                            needInstall = true
+                        }
+                        else -> {
+                            status = result
+                            needInstall = false
+                        }
                     }
                 },
                 colors = ButtonDefaults.buttonColors(
@@ -235,36 +217,35 @@ fun PlayScreen(store: Store) {
                 Spacer(Modifier.height(10.dp))
                 Text(status!!, color = Turf.Whistle)
             }
+            if (needInstall) {
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = {
+                        ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(DolphinLauncher.PLAY_STORE_URL)))
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Instalar o Dolphin", color = Turf.Chalk)
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun Panel(title: String, subtitle: String, content: @Composable () -> Unit) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(20.dp)
-    ) {
-        Text(title, fontSize = 32.sp, fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic, color = Turf.Chalk)
-        Spacer(Modifier.height(4.dp))
-        Text(subtitle, color = Turf.Chalk.copy(alpha = 0.75f))
-        Spacer(Modifier.height(16.dp))
-        Surface(color = Turf.Ink.copy(alpha = 0.82f), shape = RoundedCornerShape(14.dp)) {
-            content()
-        }
-    }
-}
-
-@Composable
-private fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+private fun SwitchRow(label: String, hint: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, Modifier.weight(1f), color = Turf.Chalk)
+        Column(Modifier.weight(1f)) {
+            Text(label, color = Turf.Chalk, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(2.dp))
+            Text(hint, color = Turf.Chalk.copy(alpha = 0.7f), fontSize = 13.sp)
+        }
+        Spacer(Modifier.width(12.dp))
         Switch(
             checked = checked,
             onCheckedChange = onChange,
@@ -279,54 +260,38 @@ private fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Un
 }
 
 @Composable
-fun ToggleScreen(title: String, subtitle: String, items: List<Pair<String, String>>, store: Store, prefix: String) {
-    val state = remember {
-        mutableStateMapOf<String, Boolean>().apply {
-            items.forEach { put(it.first, store.flag(prefix + it.first)) }
-        }
-    }
-    Panel(title, subtitle) {
-        LazyColumn {
-            items(items) { item ->
-                SwitchRow(item.second, state[item.first] == true) { v ->
-                    state[item.first] = v
-                    store.setFlag(prefix + item.first, v)
+fun ConfigScreen(store: Store) {
+    val ctx = LocalContext.current
+    var sendPath by remember { mutableStateOf(store.flag("send_path")) }
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(20.dp)
+    ) {
+        Text("Config", fontSize = 32.sp, fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic, color = Turf.Chalk)
+        Spacer(Modifier.height(4.dp))
+        Text("Como o jogo é enviado ao Dolphin.", color = Turf.Chalk.copy(alpha = 0.75f))
+        Spacer(Modifier.height(16.dp))
+        Surface(color = Turf.Ink.copy(alpha = 0.82f), shape = RoundedCornerShape(14.dp)) {
+            Column {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Dolphin", color = Turf.Chalk, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        if (DolphinLauncher.isInstalled(ctx)) "Instalado" else "Não encontrado neste celular",
+                        color = if (DolphinLauncher.isInstalled(ctx)) Turf.Whistle else Turf.Orange
+                    )
+                }
+                SwitchRow(
+                    label = "Enviar caminho do arquivo",
+                    hint = "Use só se o jogo não abrir com o padrão. Funciona com arquivos na memória interna ou no cartão SD.",
+                    checked = sendPath
+                ) {
+                    sendPath = it
+                    store.setFlag("send_path", it)
                 }
             }
-        }
-    }
-}
-
-@Composable
-fun ConfigScreen(store: Store) {
-    var res by remember { mutableStateOf(store.number("res_scale", 1f)) }
-    var opacity by remember { mutableStateOf(store.number("touch_opacity", 0.6f)) }
-    var fps by remember { mutableStateOf(store.flag("show_fps")) }
-    var haptics by remember { mutableStateOf(store.flag("haptics", true)) }
-
-    Panel("Config", NOT_READY) {
-        Column(Modifier.padding(vertical = 8.dp)) {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
-                Text("Resolução interna: " + String.format("%.1fx", res), color = Turf.Chalk)
-                Slider(
-                    value = res,
-                    onValueChange = { res = it; store.setNumber("res_scale", it) },
-                    valueRange = 0.5f..2f,
-                    steps = 5,
-                    colors = SliderDefaults.colors(thumbColor = Turf.Orange, activeTrackColor = Turf.Orange)
-                )
-            }
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
-                Text("Opacidade dos botões na tela: " + (opacity * 100).toInt() + "%", color = Turf.Chalk)
-                Slider(
-                    value = opacity,
-                    onValueChange = { opacity = it; store.setNumber("touch_opacity", it) },
-                    valueRange = 0.1f..1f,
-                    colors = SliderDefaults.colors(thumbColor = Turf.Orange, activeTrackColor = Turf.Orange)
-                )
-            }
-            SwitchRow("Mostrar FPS", fps) { fps = it; store.setFlag("show_fps", it) }
-            SwitchRow("Vibração nos botões", haptics) { haptics = it; store.setFlag("haptics", it) }
         }
     }
 }
