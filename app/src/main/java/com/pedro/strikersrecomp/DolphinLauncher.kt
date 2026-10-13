@@ -1,5 +1,6 @@
 package com.pedro.strikersrecomp
 
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -51,16 +52,16 @@ object DolphinLauncher {
         intent.putExtra("AutoStartFiles", arrayOf(game))
         if (path == null) {
             // Dá ao Dolphin permissão de leitura para este arquivo.
-            intent.data = gameUri
+            intent.clipData = ClipData.newRawUri("jogo", gameUri)
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
         return try {
             ctx.startActivity(intent)
             null
-        } catch (e: Exception) {
-            "Não consegui abrir o Dolphin: " + (e.message ?: "erro desconhecido")
+        } catch (e: Throwable) {
+            "Erro ao abrir o Dolphin: " + e.javaClass.simpleName + " - " + (e.message ?: "sem detalhes")
         }
     }
 }
